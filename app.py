@@ -15,9 +15,6 @@ import soundfile as sf
 # Browser Microphone Component
 from streamlit_mic_recorder import mic_recorder
 
-# Speech Recognition for Transcribing Spoken Words
-import speech_recognition as sr_lib
-
 # PDF Generation & QR Code
 import qrcode
 from reportlab.lib.pagesizes import letter
@@ -27,7 +24,7 @@ from reportlab.lib import colors
 
 
 # ==========================================
-# 1. ACCURATE AUDIO LOADER & PURE STT ENGINE
+# 1. ACCURATE AUDIO LOADER ENGINE
 # ==========================================
 def process_audio_bytes(audio_bytes):
     wav_filename = f"temp_mic_{int(time.time())}.wav"
@@ -81,39 +78,6 @@ def load_uploaded_audio(uploaded_file):
         
     sf.write(wav_filename, audio_data, sr, subtype='PCM_16')
     return audio_data, sr, wav_filename
-
-def transcribe_spoken_words(wav_filename):
-    """Pure Real-Time Speech Transcriber (No Hardcoded Fake Text)."""
-    recognizer = sr_lib.Recognizer()
-    recognizer.energy_threshold = 200
-    recognizer.dynamic_energy_threshold = True
-    
-    try:
-        with sr_lib.AudioFile(wav_filename) as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.3)
-            audio_text = recognizer.record(source)
-            
-            # 1. Primary English (India) Speech Recognition
-            try:
-                text = recognizer.recognize_google(audio_text, language="en-IN")
-                if text and len(text.strip()) > 0:
-                    return f'"{text}"'
-            except Exception:
-                pass
-                
-            # 2. Secondary Tamil Speech Recognition
-            try:
-                text_ta = recognizer.recognize_google(audio_text, language="ta-IN")
-                if text_ta and len(text_ta.strip()) > 0:
-                    return f'"{text_ta}"'
-            except Exception:
-                pass
-
-    except Exception:
-        pass
-
-    # Pure Diagnostic Output when Speech API is unreachable / low volume
-    return "[Speech unintelligible or Cloud STT stream unverified - Acoustic spectrum analyzed]"
 
 def extract_mfcc_features(audio, sr=16000, n_mfcc=40):
     if len(audio) == 0:
@@ -211,7 +175,7 @@ def plot_gauge_meter(score):
 # ==========================================
 # 4. ENTERPRISE PDF FORENSIC REPORT GENERATOR
 # ==========================================
-def generate_pdf_report(caller_name, phone_number, purpose, risk_score, transcribed_text, fig_wave, fig_mfcc):
+def generate_pdf_report(caller_name, phone_number, purpose, risk_score, fig_wave, fig_mfcc):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -245,8 +209,7 @@ def generate_pdf_report(caller_name, phone_number, purpose, risk_score, transcri
         ["Inbound Line ID", phone_number],
         ["Stated Call Context", purpose],
         ["Evaluated Voice Clone Risk", f"{risk_score}% [{risk_level}]"],
-        [Paragraph("<b>Transcribed Words</b>", styles['Normal']), Paragraph(f"<b><font color='#4F46E5'>{transcribed_text}</font></b>", styles['Normal'])],
-        ["Analysis Engine", "Speech-to-Text Stream + Dynamic Multi-Feature Acoustic Engine"]
+        ["Analysis Engine", "Dynamic Multi-Feature Spectral Acoustic Engine (40 MFCC)"]
     ]
     
     t = Table(summary_data, colWidths=[150, 360])
@@ -269,7 +232,7 @@ def generate_pdf_report(caller_name, phone_number, purpose, risk_score, transcri
 
     qr_table_data = [
         [Image(qr_img_path, width=55, height=55), 
-         Paragraph(f"<b>Cryptographic Verification Seal</b><br/>Verified forensic transcript: <i>{transcribed_text}</i> with risk rating of {risk_score}%. Scan QR code for verification.", styles['Normal'])]
+         Paragraph(f"<b>Cryptographic Verification Seal</b><br/>Verified forensic spectral payload with evaluated risk rating of {risk_score}%. Scan QR code for validation.", styles['Normal'])]
     ]
     t_qr = Table(qr_table_data, colWidths=[65, 435])
     t_qr.setStyle(TableStyle([
@@ -326,16 +289,6 @@ st.markdown("""
         width: 100%;
         box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
     }
-    
-    .speech-box {
-        background: #0F172A;
-        border: 1px solid #334155;
-        border-radius: 8px;
-        padding: 12px;
-        font-size: 14px;
-        color: #38BDF8;
-        font-weight: 600;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -359,7 +312,7 @@ with kpi1:
 with kpi2:
     st.markdown('<div class="metric-card"><p style="font-size:10px; color:#64748B; margin:0; text-transform:uppercase;">Features</p><h4 style="margin:2px 0; color:#F8FAFC;">40 MFCC</h4></div>', unsafe_allow_html=True)
 with kpi3:
-    st.markdown('<div class="metric-card"><p style="font-size:10px; color:#64748B; margin:0; text-transform:uppercase;">Transcriber</p><h4 style="margin:2px 0; color:#F8FAFC;">STT Engine</h4></div>', unsafe_allow_html=True)
+    st.markdown('<div class="metric-card"><p style="font-size:10px; color:#64748B; margin:0; text-transform:uppercase;">Analysis Engine</p><h4 style="margin:2px 0; color:#F8FAFC;">Spectral AI</h4></div>', unsafe_allow_html=True)
 with kpi4:
     st.markdown('<div class="metric-card"><p style="font-size:10px; color:#64748B; margin:0; text-transform:uppercase;">Standard</p><h4 style="margin:2px 0; color:#F8FAFC;">ISO 27001</h4></div>', unsafe_allow_html=True)
 
@@ -385,9 +338,8 @@ col_left, col_right = st.columns([1, 1])
 
 # Handle Audio Processing logic
 if input_type == "🎙️ Browser Live Mic" and record_res:
-    with st.spinner("🎙️ Processing recorded audio stream & transcribing..."):
+    with st.spinner("🎙️ Processing recorded audio stream & analyzing signal..."):
         audio_data, sr, wav_file = process_audio_bytes(record_res['bytes'])
-        transcribed_text = transcribe_spoken_words(wav_file)
         mfcc = extract_mfcc_features(audio_data, sr=sr)
         risk_score = predict_voice_authenticity_real(audio_data, sr, mfcc)
         
@@ -395,7 +347,6 @@ if input_type == "🎙️ Browser Live Mic" and record_res:
         st.session_state['sr'] = sr
         st.session_state['mfcc'] = mfcc
         st.session_state['risk'] = risk_score
-        st.session_state['text'] = transcribed_text
         st.session_state['analyzed'] = True
         
         if os.path.exists(wav_file):
@@ -403,9 +354,8 @@ if input_type == "🎙️ Browser Live Mic" and record_res:
 
 elif input_type == "📁 Upload Voice File" and 'start_file_sim' in locals() and start_file_sim:
     if uploaded_file is not None:
-        with st.spinner("📁 Loading audio file, transcribing and analyzing..."):
+        with st.spinner("📁 Loading audio file and analyzing acoustic features..."):
             audio_data, sr, wav_file = load_uploaded_audio(uploaded_file)
-            transcribed_text = transcribe_spoken_words(wav_file)
             mfcc = extract_mfcc_features(audio_data, sr=sr)
             risk_score = predict_voice_authenticity_real(audio_data, sr, mfcc)
             
@@ -413,7 +363,6 @@ elif input_type == "📁 Upload Voice File" and 'start_file_sim' in locals() and
             st.session_state['sr'] = sr
             st.session_state['mfcc'] = mfcc
             st.session_state['risk'] = risk_score
-            st.session_state['text'] = transcribed_text
             st.session_state['analyzed'] = True
             
             if os.path.exists(wav_file):
@@ -426,11 +375,9 @@ if st.session_state.get('analyzed', False):
     sr = st.session_state['sr']
     mfcc = st.session_state['mfcc']
     risk_score = st.session_state['risk']
-    transcribed_text = st.session_state['text']
 
     with col_left:
-        st.markdown("<h4 style='font-size:14px; color:#F8FAFC;'>🗣️ Transcribed Spoken Words</h4>", unsafe_allow_html=True)
-        st.markdown(f'<div class="speech-box">💬 {transcribed_text}</div>', unsafe_allow_html=True)
+        st.markdown("<h4 style='font-size:14px; color:#F8FAFC;'>📊 Voice Authenticity Index</h4>", unsafe_allow_html=True)
         st.plotly_chart(plot_gauge_meter(risk_score), use_container_width=True)
 
     with col_right:
@@ -444,7 +391,7 @@ if st.session_state.get('analyzed', False):
     
     st.markdown("<h4 style='font-size:16px; color:#F8FAFC;'>📄 Export Forensic PDF Report Pack</h4>", unsafe_allow_html=True)
     
-    pdf_bytes = generate_pdf_report(caller_name, phone_number, call_purpose, risk_score, transcribed_text, fig_wave, fig_mfcc)
+    pdf_bytes = generate_pdf_report(caller_name, phone_number, call_purpose, risk_score, fig_wave, fig_mfcc)
     
     st.download_button(
         label="📥 EXPORT FORENSIC PDF REPORT",
