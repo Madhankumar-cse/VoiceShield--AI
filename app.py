@@ -12,16 +12,11 @@ import librosa
 import librosa.display
 import soundfile as sf
 
-# Safe Import for SoundDevice (Handles Cloud vs Local execution)
-try:
-    import sounddevice as sd
-    SOUNDDEVICE_AVAILABLE = True
-except Exception:
-    SOUNDDEVICE_AVAILABLE = False
+# Browser Microphone Component for Cloud Compatibility
+from streamlit_mic_recorder import mic_recorder
 
 # Speech Recognition for Transcribing Spoken Words
 import speech_recognition as sr_lib
-from scipy.io.wavfile import write
 
 # PDF Generation & QR Code
 import qrcode
@@ -32,26 +27,19 @@ from reportlab.lib import colors
 
 
 # ==========================================
-# 1. AUDIO RECORDING, FILE LOAD & STT ENGINE
+# 1. AUDIO PROCESSING & STT ENGINE
 # ==========================================
-def record_live_audio(duration=5, sample_rate=16000):
-    if not SOUNDDEVICE_AVAILABLE:
-        st.error("Live Microphone recording requires local hardware execution. Please use 'Upload Voice File' mode on Cloud deployment.")
-        return np.zeros(sample_rate * duration), sample_rate, "temp_empty.wav"
+def process_audio_bytes(audio_bytes):
+    """Processes recorded audio bytes from Streamlit browser recorder."""
+    wav_filename = f"temp_mic_{int(time.time())}.wav"
+    with open(wav_filename, "wb") as f:
+        f.write(audio_bytes)
         
-    recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32')
-    sd.wait()
-    audio_data = np.squeeze(recording)
-    
-    wav_filename = "temp_live_speech.wav"
-    scaled_audio = np.int16(audio_data / np.max(np.abs(audio_data)) * 32767) if np.max(np.abs(audio_data)) > 0 else audio_data
-    write(wav_filename, sample_rate, scaled_audio)
-    
-    return audio_data, sample_rate, wav_filename
+    audio_data, sr = librosa.load(wav_filename, sr=16000)
+    return audio_data, sr, wav_filename
 
 def load_uploaded_audio(uploaded_file):
     wav_filename = f"temp_uploaded_{int(time.time())}.wav"
-    
     with open(wav_filename, "wb") as f:
         f.write(uploaded_file.getbuffer())
         
@@ -339,49 +327,55 @@ with st.sidebar:
     call_purpose = st.selectbox("Purpose", ["Urgent Fund Transfer", "Data Request", "Account Verification"])
     
     st.divider()
+    input_type = st.radio("Select Input Source Mode", ["🎙️ Browser Live Mic", "📁 Upload Voice File"])
     
-    if SOUNDDEVICE_AVAILABLE:
-        input_type = st.radio("Select Input Source Mode", ["🎙️ Live Microphone", "📁 Upload Voice File"])
-    else:
-        st.info("ℹ️ Running on Cloud Server Mode. File upload active.")
-        input_type = "📁 Upload Voice File"
-    
-    if input_type == "🎙️ Live Microphone":
-        record_duration = st.slider("Capture Sec", min_value=3, max_value=10, value=5)
-        start_sim = st.button("🔴 ANALYZE LIVE MIC STREAM")
-        uploaded_file = None
+    if input_type == "🎙️ Browser Live Mic":
+        st.markdown("**Click Start Recording below:**")
+        record_res = mic_recorder(start_prompt="🔴 Start Recording", stop_prompt="⏹️ Stop Recording", key='recorder')
     else:
         uploaded_file = st.file_uploader("Choose Voice File (WAV, MP3, M4A, OGG)", type=["wav", "mp3", "m4a", "ogg"])
-        start_sim = st.button("🔍 ANALYZE UPLOADED AUDIO")
+        start_file_sim = st.button("🔍 ANALYZE UPLOADED AUDIO")
 
 # Main Section
 col_left, col_right = st.columns([1, 1])
 
-if start_sim:
-    if input_type == "🎙️ Live Microphone":
-        with st.spinner("🎙️ Transcribing and analyzing live mic stream..."):
-            audio_data, sr, wav_file = record_live_audio(duration=record_duration)
-    else:
-        if uploaded_file is not None:
-            with st.spinner("📁 Loading audio file and analyzing acoustics..."):
-                audio_data, sr, wav_file = load_uploaded_audio(uploaded_file)
-        else:
-            st.error("Please upload an audio file first!")
-            st.stop()
+# Handle Audio Processing logic
+if input_type == "🎙️ Browser Live Mic" and record_res:
+    with st.spinner("🎙️ Processing recorded audio stream..."):
+        audio_data, sr, wav_file = process_audio_bytes(record_res['bytes'])
+        transcribed_text = transcribe_spoken_words(wav_file)
+        mfcc = extract_mfcc_features(audio_data, sr=sr)
+        risk_score = predict_voice_authenticity_real(audio_data, sr, mfcc)
+        
+        st.session_state['audio'] = audio_data
+        st.session_state['sr'] = sr
+        st.session_state['mfcc'] = mfcc
+        st.session_state['risk'] = risk_score
+        st.session_state['text'] = transcribed_text
+        st.session_state['analyzed'] = True
+        
+        if os.path.exists(wav_file):
+            os.remove(wav_file)
+
+elif input_type == "📁 Upload Voice File" and 'start_file_sim' in locals() and start_file_sim:
+    if uploaded_file is not None:
+        with st.spinner("📁 Loading audio file and analyzing acoustics..."):
+            audio_data, sr, wav_file = load_uploaded_audio(uploaded_file)
+            transcribed_text = transcribe_spoken_words(wav_file)
+            mfcc = extract_mfcc_features(audio_data, sr=sr)
+            risk_score = predict_voice_authenticity_real(audio_data, sr, mfcc)
             
-    transcribed_text = transcribe_spoken_words(wav_file)
-    mfcc = extract_mfcc_features(audio_data, sr=sr)
-    risk_score = predict_voice_authenticity_real(audio_data, sr, mfcc)
-    
-    st.session_state['audio'] = audio_data
-    st.session_state['sr'] = sr
-    st.session_state['mfcc'] = mfcc
-    st.session_state['risk'] = risk_score
-    st.session_state['text'] = transcribed_text
-    st.session_state['analyzed'] = True
-    
-    if os.path.exists(wav_file):
-        os.remove(wav_file)
+            st.session_state['audio'] = audio_data
+            st.session_state['sr'] = sr
+            st.session_state['mfcc'] = mfcc
+            st.session_state['risk'] = risk_score
+            st.session_state['text'] = transcribed_text
+            st.session_state['analyzed'] = True
+            
+            if os.path.exists(wav_file):
+                os.remove(wav_file)
+    else:
+        st.error("Please upload an audio file first!")
 
 if st.session_state.get('analyzed', False):
     audio_data = st.session_state['audio']
@@ -417,4 +411,4 @@ if st.session_state.get('analyzed', False):
     )
 
 else:
-    st.info("👈 Select **Live Microphone** or **Upload Voice File** in the sidebar and click Analyze.")
+    st.info("👈 Select **Browser Live Mic** or **Upload Voice File** in the sidebar to start recording & analysis.")
