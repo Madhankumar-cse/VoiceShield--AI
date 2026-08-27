@@ -10,8 +10,14 @@ import streamlit as st
 # Audio & Signal Processing Packages
 import librosa
 import librosa.display
-import sounddevice as sd
 import soundfile as sf
+
+# Safe Import for SoundDevice (Handles Cloud vs Local execution)
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_AVAILABLE = True
+except Exception:
+    SOUNDDEVICE_AVAILABLE = False
 
 # Speech Recognition for Transcribing Spoken Words
 import speech_recognition as sr_lib
@@ -29,6 +35,10 @@ from reportlab.lib import colors
 # 1. AUDIO RECORDING, FILE LOAD & STT ENGINE
 # ==========================================
 def record_live_audio(duration=5, sample_rate=16000):
+    if not SOUNDDEVICE_AVAILABLE:
+        st.error("Live Microphone recording requires local hardware execution. Please use 'Upload Voice File' mode on Cloud deployment.")
+        return np.zeros(sample_rate * duration), sample_rate, "temp_empty.wav"
+        
     recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32')
     sd.wait()
     audio_data = np.squeeze(recording)
@@ -304,7 +314,7 @@ st.markdown("""
         🛡️ VoiceShield <span style="color: #38BDF8;">AI</span>
     </h1>
     <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748B;">
-        Real-Time Voice Clone Detection | SIH 2026
+        Real-Time Voice Clone Detection | SIH 2026 Production-Ready
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -329,7 +339,12 @@ with st.sidebar:
     call_purpose = st.selectbox("Purpose", ["Urgent Fund Transfer", "Data Request", "Account Verification"])
     
     st.divider()
-    input_type = st.radio("Select Input Source Mode", ["🎙️ Live Microphone", "📁 Upload Voice File"])
+    
+    if SOUNDDEVICE_AVAILABLE:
+        input_type = st.radio("Select Input Source Mode", ["🎙️ Live Microphone", "📁 Upload Voice File"])
+    else:
+        st.info("ℹ️ Running on Cloud Server Mode. File upload active.")
+        input_type = "📁 Upload Voice File"
     
     if input_type == "🎙️ Live Microphone":
         record_duration = st.slider("Capture Sec", min_value=3, max_value=10, value=5)
@@ -389,7 +404,6 @@ if st.session_state.get('analyzed', False):
 
     st.divider()
     
-    # ALWAYS VISIBLE PDF SECTION
     st.markdown("<h4 style='font-size:16px; color:#F8FAFC;'>📄 Export Forensic PDF Report Pack</h4>", unsafe_allow_html=True)
     
     pdf_bytes = generate_pdf_report(caller_name, phone_number, call_purpose, risk_score, transcribed_text, fig_wave, fig_mfcc)
@@ -403,4 +417,4 @@ if st.session_state.get('analyzed', False):
     )
 
 else:
-    st.info(" Select **Live Microphone** or **Upload Voice File** in the sidebar and click Analyze.")
+    st.info("👈 Select **Live Microphone** or **Upload Voice File** in the sidebar and click Analyze.")
