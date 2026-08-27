@@ -27,7 +27,7 @@ from reportlab.lib import colors
 
 
 # ==========================================
-# 1. ACCURATE AUDIO LOADER & DYNAMIC STT ENGINE
+# 1. ACCURATE AUDIO LOADER & PURE STT ENGINE
 # ==========================================
 def process_audio_bytes(audio_bytes):
     wav_filename = f"temp_mic_{int(time.time())}.wav"
@@ -83,32 +83,37 @@ def load_uploaded_audio(uploaded_file):
     return audio_data, sr, wav_filename
 
 def transcribe_spoken_words(wav_filename):
-    """Guaranteed Real-time Speech-to-Text Demo Transcriber."""
+    """Pure Real-Time Speech Transcriber (No Hardcoded Fake Text)."""
     recognizer = sr_lib.Recognizer()
+    recognizer.energy_threshold = 200
+    recognizer.dynamic_energy_threshold = True
     
     try:
         with sr_lib.AudioFile(wav_filename) as source:
-            recognizer.adjust_for_ambient_noise(source, duration=0.2)
+            recognizer.adjust_for_ambient_noise(source, duration=0.3)
             audio_text = recognizer.record(source)
             
-            # Direct Speech API attempt
-            text = recognizer.recognize_google(audio_text, language="en-IN")
-            if text and len(text.strip()) > 0:
-                return f'"{text}"'
+            # 1. Primary English (India) Speech Recognition
+            try:
+                text = recognizer.recognize_google(audio_text, language="en-IN")
+                if text and len(text.strip()) > 0:
+                    return f'"{text}"'
+            except Exception:
+                pass
+                
+            # 2. Secondary Tamil Speech Recognition
+            try:
+                text_ta = recognizer.recognize_google(audio_text, language="ta-IN")
+                if text_ta and len(text_ta.strip()) > 0:
+                    return f'"{text_ta}"'
+            except Exception:
+                pass
+
     except Exception:
         pass
 
-    # Dynamic Audio Signal Decoder for Presentation Stability
-    try:
-        y, sr = librosa.load(wav_filename, sr=16000)
-        duration = len(y) / sr
-        
-        if duration > 1.0:
-            return '"Hello, please approve the urgent payment transfer immediately."'
-        else:
-            return '"Verification audio signal received."'
-    except Exception:
-        return '"Authenticating live incoming audio payload..."'
+    # Pure Diagnostic Output when Speech API is unreachable / low volume
+    return "[Speech unintelligible or Cloud STT stream unverified - Acoustic spectrum analyzed]"
 
 def extract_mfcc_features(audio, sr=16000, n_mfcc=40):
     if len(audio) == 0:
